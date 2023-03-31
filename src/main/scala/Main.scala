@@ -8,6 +8,7 @@ import natchez.{EntryPoint, Trace}
 import natchez.log.Log
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
+import fs2.io.net.Network
 
 // a data type
 case class Pet(name: String, age: Short)
@@ -52,16 +53,16 @@ object PetService {
 
 object CommandExample extends IOApp {
 
-  implicit val log: Logger[IO] =
+  val log: Logger[IO] =
     Slf4jLogger.getLoggerFromName("example-logger")
 
   val ep: EntryPoint[IO] =
-    Log.entryPoint[IO]("example-service")
+    Log.entryPoint[IO]("example-service")(Sync[IO], log)
 
-  implicit val console = NoopConsole[IO]
+  val console = NoopConsole[IO]
 
   import cats.effect.unsafe.implicits.global
-  implicit val trace: Trace[IO] = 
+  val trace: Trace[IO] = 
     Trace.ioTraceForEntryPoint(ep).unsafeRunSync()
 
   // a source of sessions
@@ -71,6 +72,11 @@ object CommandExample extends IOApp {
       user     = "postgres",
       database = "postgres",
       password = Some("postgres"),
+    )(
+      Concurrent[IO],
+      trace,
+      Network[IO],
+      console,
     )
 
   // a resource that creates and drops a temporary table
