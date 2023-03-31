@@ -1,4 +1,4 @@
-import cats._
+// import cats._
 import cats.effect._
 import cats.syntax.all._
 import skunk._
@@ -42,9 +42,9 @@ object PetService {
       .gmap[Pet]
 
   // construct a PetService
-  def fromSession[F[_]: Monad](s: Session[F]): PetService[F] =
+  def fromSession[F[_]: MonadCancelThrow](s: Session[F]): PetService[F] =
     new PetService[F] {
-      def insert(pet: Pet): F[Unit] = s.prepare(insertOne).flatMap(_.execute(pet)).void
+      def insert(pet: Pet): F[Unit] = s.prepare(insertOne).flatMap(p => s.transaction.use(_ => p.execute(pet))).void
       def insert(ps: List[Pet]): F[Unit] = s.prepare(insertMany(ps)).flatMap(_.execute(ps)).void
       def selectAll: F[List[Pet]] = s.execute(all)
     }
@@ -96,9 +96,9 @@ object CommandExample extends IOApp {
       for {
         _  <- s.insert(bob)
         _  <- s.insert(beagles)
-        _  <- s.insert(bob)
+        _  <- s.insert(bob).handleErrorWith(_ => log.info("******************************* Error"))
         ps <- s.selectAll
-        _  <- ps.traverse(p => IO.println(p))
+        _  <- ps.traverse(p => IO.println(s"***************************************** $p"))
       } yield ExitCode.Success
     }
 
