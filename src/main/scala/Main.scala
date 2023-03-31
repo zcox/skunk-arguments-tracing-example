@@ -58,6 +58,8 @@ object CommandExample extends IOApp {
   val ep: EntryPoint[IO] =
     Log.entryPoint[IO]("example-service")
 
+  implicit val console = NoopConsole[IO]
+
   import cats.effect.unsafe.implicits.global
   implicit val trace: Trace[IO] = 
     Trace.ioTraceForEntryPoint(ep).unsafeRunSync()
@@ -73,7 +75,7 @@ object CommandExample extends IOApp {
 
   // a resource that creates and drops a temporary table
   def withPetsTable(s: Session[IO]): Resource[IO, Unit] = {
-    val alloc = s.execute(sql"CREATE TEMP TABLE pets (name varchar, age int2)".command).void
+    val alloc = s.execute(sql"CREATE TEMP TABLE pets (name varchar PRIMARY KEY, age int2)".command).void
     val free  = s.execute(sql"DROP TABLE pets".command).void
     Resource.make(alloc)(_ => free)
   }
@@ -88,6 +90,7 @@ object CommandExample extends IOApp {
       for {
         _  <- s.insert(bob)
         _  <- s.insert(beagles)
+        _  <- s.insert(bob)
         ps <- s.selectAll
         _  <- ps.traverse(p => IO.println(p))
       } yield ExitCode.Success
