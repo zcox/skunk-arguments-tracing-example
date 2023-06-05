@@ -7,7 +7,7 @@ docker compose up -d
 sbt run
 ```
 
-Note that Skunk leaks all inserted data to the tracing backend, in the `arguments` field:
+Note that Skunk leaks all inserted data to the tracing backend, in the `arguments` field of the `bind` trace:
 
 ```
   "arguments" : "Bob,12",
@@ -27,61 +27,38 @@ And the `error.detail` field:
  "error.detail" : "Key (name)=(Bob) already exists."
 ```
 
-Skunk also leaks the arguments to the console:
+When a command is executed within a transaction, and the command fails (e.g. unique constraint violation), something within Skunk appears to log the error, with arguments, 
+directly to stdout/stderr. We have not found a way to prevent this.
 
 ```
-[error] skunk.exception.PostgresErrorException:
-[error] 🔥
-[error] 🔥  Postgres ERROR 23505 raised in _bt_check_unique (nbtinsert.c:664)
-[error] 🔥
-[error] 🔥    Problem: Duplicate key value violates unique constraint "pets_pkey".
-[error] 🔥     Detail: Key (name)=(Bob) already exists.
-[error] 🔥
-[error] 🔥  The statement under consideration was defined
-[error] 🔥    at /Users/ZCox/code/zcox/skunk-arguments-tracing-example/src/main/scala/Main.scala:28
-[error] 🔥
-[error] 🔥    INSERT INTO pets VALUES ($1, $2)
-[error] 🔥
-[error] 🔥  and the arguments were provided
-[error] 🔥    at /Users/ZCox/code/zcox/skunk-arguments-tracing-example/src/main/scala/Main.scala:47
-[error] 🔥
-[error] 🔥    $1 varchar    Bob
-[error] 🔥    $2 int2       12
-[error] 🔥
-[error] 🔥  If this is an error you wish to trap and handle in your application, you can do
-[error] 🔥  so with a SqlState extractor. For example:
-[error] 🔥
-[error] 🔥    doSomething.recoverWith { case SqlState.UniqueViolation(ex) =>  ...}
-[error] 🔥
-[error]
-[error] skunk.exception.PostgresErrorException: Duplicate key value violates unique constraint "pets_pkey".
-[error]   at skunk.net.protocol.Execute$$anon$1$$anonfun$$nestedInanonfun$apply$2$1.$anonfun$applyOrElse$8(Execute.scala:69)
-[error]   at flatten$extension @ skunk.util.Pool$.$anonfun$ofF$2(Pool.scala:103)
-[error]   at flatMap @ skunk.net.BufferedMessageSocket$$anon$1.$anonfun$receive$1(BufferedMessageSocket.scala:150)
-[error]   at get @ skunk.util.Pool$.free$1(Pool.scala:156)
-[error]   at flatMap @ skunk.net.BufferedMessageSocket$$anon$1.receive(BufferedMessageSocket.scala:147)
-[error] stack trace is suppressed; run last Compile / run for the full output
-[error] (Compile / run) skunk.exception.PostgresErrorException:
-[error] 🔥
-[error] 🔥  Postgres ERROR 23505 raised in _bt_check_unique (nbtinsert.c:664)
-[error] 🔥
-[error] 🔥    Problem: Duplicate key value violates unique constraint "pets_pkey".
-[error] 🔥     Detail: Key (name)=(Bob) already exists.
-[error] 🔥
-[error] 🔥  The statement under consideration was defined
-[error] 🔥    at /Users/ZCox/code/zcox/skunk-arguments-tracing-example/src/main/scala/Main.scala:28
-[error] 🔥
-[error] 🔥    INSERT INTO pets VALUES ($1, $2)
-[error] 🔥
-[error] 🔥  and the arguments were provided
-[error] 🔥    at /Users/ZCox/code/zcox/skunk-arguments-tracing-example/src/main/scala/Main.scala:47
-[error] 🔥
-[error] 🔥    $1 varchar    Bob
-[error] 🔥    $2 int2       12
-[error] 🔥
-[error] 🔥  If this is an error you wish to trap and handle in your application, you can do
-[error] 🔥  so with a SqlState extractor. For example:
-[error] 🔥
-[error] 🔥    doSomething.recoverWith { case SqlState.UniqueViolation(ex) =>  ...}
-[error] 🔥
+skunk.exception.PostgresErrorException:
+🔥
+🔥  Postgres ERROR 23505 raised in _bt_check_unique (nbtinsert.c:664)
+🔥
+🔥    Problem: Duplicate key value violates unique constraint "pets_pkey".
+🔥     Detail: Key (name)=(Bob) already exists.
+🔥
+🔥  The statement under consideration was defined
+🔥    at /Users/ZCox/code/zcox/skunk-arguments-tracing-example/src/main/scala/Main.scala:27
+🔥
+🔥    INSERT INTO pets VALUES ($1, $2)
+🔥
+🔥  and the arguments were provided
+🔥    at /Users/ZCox/code/zcox/skunk-arguments-tracing-example/src/main/scala/Main.scala:48
+🔥
+🔥    $1 varchar    Bob
+🔥    $2 int2       12
+🔥
+🔥  If this is an error you wish to trap and handle in your application, you can do
+🔥  so with a SqlState extractor. For example:
+🔥
+🔥    doSomething.recoverWith { case SqlState.UniqueViolation(ex) =>  ...}
+🔥
+
+skunk.exception.PostgresErrorException: Duplicate key value violates unique constraint "pets_pkey".
+  at skunk.net.protocol.Execute$$anon$1$$anonfun$$nestedInanonfun$apply$2$1.$anonfun$applyOrElse$8(Execute.scala:69)
+  at flatten$extension @ skunk.util.Pool$.$anonfun$ofF$2(Pool.scala:103)
+  at flatMap @ skunk.net.BufferedMessageSocket$$anon$1.$anonfun$receive$1(BufferedMessageSocket.scala:150)
+  at get @ skunk.util.Pool$.free$1(Pool.scala:156)
+  at flatMap @ skunk.net.BufferedMessageSocket$$anon$1.receive(BufferedMessageSocket.scala:147)
 ```

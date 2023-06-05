@@ -1,4 +1,3 @@
-// import cats._
 import cats.effect._
 import cats.syntax.all._
 import skunk._
@@ -27,24 +26,30 @@ object PetService {
   private val insertOne: Command[Pet] =
     sql"INSERT INTO pets VALUES ($varchar, $int2)"
       .command
-      .gcontramap[Pet]
+      .to[Pet]
 
   // command to insert a specific list of pets
   private def insertMany(ps: List[Pet]): Command[ps.type] = {
-    val enc = (varchar ~ int2).gcontramap[Pet].values.list(ps)
+    val enc = (varchar *: int2).to[Pet].values.list(ps)
     sql"INSERT INTO pets VALUES $enc".command
   }
 
   // query to select all pets
   private val all: Query[Void, Pet] =
     sql"SELECT name, age FROM pets"
-      .query(varchar ~ int2)
-      .gmap[Pet]
+      .query(varchar *: int2)
+      .to[Pet]
 
   // construct a PetService
   def fromSession[F[_]: MonadCancelThrow](s: Session[F]): PetService[F] =
     new PetService[F] {
+
+      // With a transaction, the error is logged
       def insert(pet: Pet): F[Unit] = s.prepare(insertOne).flatMap(p => s.transaction.use(_ => p.execute(pet))).void
+
+      // Without a transaction, the error is not logged
+      // def insert(pet: Pet): F[Unit] = s.prepare(insertOne).flatMap(_.execute(pet)).void
+
       def insert(ps: List[Pet]): F[Unit] = s.prepare(insertMany(ps)).flatMap(_.execute(ps)).void
       def selectAll: F[List[Pet]] = s.execute(all)
     }
@@ -59,6 +64,7 @@ object CommandExample extends IOApp {
   val ep: EntryPoint[IO] =
     Log.entryPoint[IO]("example-service")(Sync[IO], log)
 
+  // Explicitly provide a console that does nothing
   val console = NoopConsole[IO]
 
   import cats.effect.unsafe.implicits.global
@@ -96,7 +102,11 @@ object CommandExample extends IOApp {
       for {
         _  <- s.insert(bob)
         _  <- s.insert(beagles)
+
+        // The following insert fails due to unique constraint violation
+        // Note that this code does not log the error, but it still appears on the console
         _  <- s.insert(bob).handleErrorWith(_ => log.info("******************************* Error"))
+
         ps <- s.selectAll
         _  <- ps.traverse(p => IO.println(s"***************************************** $p"))
       } yield ExitCode.Success
