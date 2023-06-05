@@ -27,7 +27,7 @@ And the `error.detail` field:
  "error.detail" : "Key (name)=(Bob) already exists."
 ```
 
-When a command is executed within a transaction, and the command fails (e.g. unique constraint violation), something within Skunk appears to log the error, with arguments, 
+If the Postgres error/exception occurs within a transaction, then something within Skunk appears to log the error, with arguments, 
 directly to stdout/stderr. We have not found a way to prevent this.
 
 ```
