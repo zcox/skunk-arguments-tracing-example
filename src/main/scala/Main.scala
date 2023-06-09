@@ -41,11 +41,18 @@ object PetService {
       .to[Pet]
 
   // construct a PetService
-  def fromSession[F[_]: MonadCancelThrow](s: Session[F]): PetService[F] =
+  def fromSession[F[_]: MonadCancelThrow: Logger](s: Session[F]): PetService[F] =
     new PetService[F] {
 
       // With a transaction, the error is logged
-      def insert(pet: Pet): F[Unit] = s.prepare(insertOne).flatMap(p => s.transaction.use(_ => p.execute(pet))).void
+      def insert(pet: Pet): F[Unit] = 
+        s.prepare(insertOne).flatMap(p => 
+          s.transaction.use(_ => 
+            p.execute(pet)
+              // The error is logged, unless you handle it on every execution inside the tx
+              //.handleErrorWith(_ => Logger[F].info("******************************** Handled error on execute").as(skunk.data.Completion.Insert(0)))
+          )
+        ).void
 
       // Without a transaction, the error is not logged
       // def insert(pet: Pet): F[Unit] = s.prepare(insertOne).flatMap(_.execute(pet)).void
@@ -58,7 +65,7 @@ object PetService {
 
 object CommandExample extends IOApp {
 
-  val log: Logger[IO] =
+  implicit val log: Logger[IO] =
     Slf4jLogger.getLoggerFromName("example-logger")
 
   val ep: EntryPoint[IO] =
