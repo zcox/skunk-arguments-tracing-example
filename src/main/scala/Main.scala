@@ -3,11 +3,11 @@ import cats.syntax.all._
 import skunk._
 import skunk.codec.all._
 import skunk.implicits._
-import natchez.{EntryPoint, Trace}
-import natchez.log.Log
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
-import fs2.io.net.Network
+import io.opentelemetry.api.GlobalOpenTelemetry
+import org.typelevel.otel4s.java.OtelJava
+import org.typelevel.otel4s.trace.Tracer
 
 // a data type
 case class Pet(name: String, age: Short)
@@ -41,7 +41,7 @@ object PetService {
       .to[Pet]
 
   // construct a PetService
-  def fromSession[F[_]: MonadCancelThrow: Logger](s: Session[F]): PetService[F] =
+  def fromSession[F[_]: MonadCancelThrow](s: Session[F]): PetService[F] =
     new PetService[F] {
 
       // With a transaction, the error is logged
@@ -68,28 +68,19 @@ object CommandExample extends IOApp {
   implicit val log: Logger[IO] =
     Slf4jLogger.getLoggerFromName("example-logger")
 
-  val ep: EntryPoint[IO] =
-    Log.entryPoint[IO]("example-service")(Sync[IO], log)
-
-  // Explicitly provide a console that does nothing
-  val console = NoopConsole[IO]
-
-  import cats.effect.unsafe.implicits.global
-  val trace: Trace[IO] = 
-    Trace.ioTraceForEntryPoint(ep).unsafeRunSync()
+  def tracer: IO[Tracer[IO]] =
+    IO(GlobalOpenTelemetry.get)
+      .flatMap(OtelJava.forAsync[IO])
+      .flatMap(_.tracerProvider.get("example-service"))
 
   // a source of sessions
-  val session: Resource[IO, Session[IO]] =
+  def session(implicit t: Tracer[IO]): Resource[IO, Session[IO]] =
     Session.single(
       host     = "localhost",
       user     = "postgres",
       database = "postgres",
       password = Some("postgres"),
-    )(
-      Concurrent[IO],
-      trace,
-      Network[IO],
-      console,
+      redactionStrategy = skunk.RedactionStrategy.All
     )
 
   // a resource that creates and drops a temporary table
@@ -105,18 +96,20 @@ object CommandExample extends IOApp {
 
   // our entry point
   def run(args: List[String]): IO[ExitCode] =
-    session.flatMap(s => withPetsTable(s).map(_ => s)).map(PetService.fromSession(_)).use { s =>
-      for {
-        _  <- s.insert(bob)
-        _  <- s.insert(beagles)
+    tracer.flatMap { implicit t =>
+      session.flatMap(s => withPetsTable(s).map(_ => s)).map(PetService.fromSession(_)).use { s =>
+        for {
+          _  <- s.insert(bob)
+          _  <- s.insert(beagles)
 
-        // The following insert fails due to unique constraint violation
-        // Note that this code does not log the error, but it still appears on the console
-        _  <- s.insert(bob).handleErrorWith(_ => log.info("******************************* Error"))
+          // The following insert fails due to unique constraint violation
+          // Note that this code does not log the error, but it still appears on the console
+          _  <- s.insert(bob).handleErrorWith(_ => log.info("******************************* Error"))
 
-        ps <- s.selectAll
-        _  <- ps.traverse(p => IO.println(s"***************************************** $p"))
-      } yield ExitCode.Success
+          ps <- s.selectAll
+          _  <- ps.traverse(p => IO.println(s"***************************************** $p"))
+        } yield ExitCode.Success
+      }
     }
 
 }
